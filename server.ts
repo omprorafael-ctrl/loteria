@@ -13,26 +13,37 @@ const app = express();
 let dbInstance: any = null;
 function getDB() {
   if (!dbInstance) {
-    const dbPath = process.env.VERCEL ? "/tmp/lottery.db" : "lottery.db";
-    dbInstance = new Database(dbPath);
-    
-    // Initialize DB
-    dbInstance.exec(`
-      CREATE TABLE IF NOT EXISTS user_games (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        lottery_type TEXT NOT NULL,
-        numbers TEXT NOT NULL,
-        draw_number TEXT,
-        teimosinha_draws INTEGER DEFAULT 1,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-
-    // Migration for existing DB
     try {
-      dbInstance.exec("ALTER TABLE user_games ADD COLUMN teimosinha_draws INTEGER DEFAULT 1");
-    } catch (e) {
-      // Column might already exist
+      const dbPath = process.env.VERCEL ? "/tmp/lottery.db" : "lottery.db";
+      dbInstance = new Database(dbPath);
+      
+      // Initialize DB
+      dbInstance.exec(`
+        CREATE TABLE IF NOT EXISTS user_games (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          lottery_type TEXT NOT NULL,
+          numbers TEXT NOT NULL,
+          draw_number TEXT,
+          teimosinha_draws INTEGER DEFAULT 1,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+
+      // Migration for existing DB
+      try {
+        dbInstance.exec("ALTER TABLE user_games ADD COLUMN teimosinha_draws INTEGER DEFAULT 1");
+      } catch (e) {
+        // Column might already exist
+      }
+    } catch (err) {
+      console.error("Critical DB Initialization Error:", err);
+      // Return a mock object to prevent total crash if DB fails
+      return {
+        prepare: () => ({ 
+          all: () => [], 
+          run: () => ({ lastInsertRowid: 0 }) 
+        })
+      };
     }
   }
   return dbInstance;
