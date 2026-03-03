@@ -7,7 +7,11 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const db = new Database("lottery.db");
+const app = express();
+
+// Use /tmp for SQLite on Vercel (read-only filesystem)
+const dbPath = process.env.VERCEL ? "/tmp/lottery.db" : "lottery.db";
+const db = new Database(dbPath);
 
 // Initialize DB
 db.exec(`
@@ -27,8 +31,6 @@ try {
 } catch (e) {
   // Column might already exist
 }
-
-const app = express();
 
 app.use(express.json());
 
