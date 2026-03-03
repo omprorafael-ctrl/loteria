@@ -50,6 +50,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'play' | 'saved'>('play');
   const [notifications, setNotifications] = useState<{id: string, message: string, type: 'win' | 'info'}[]>([]);
   const [teimosinhaDraws, setTeimosinhaDraws] = useState<number>(1);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
   const fetchSavedGames = async () => {
     try {
@@ -113,6 +114,7 @@ export default function App() {
       const result = await fetchLotteryResult(selectedLottery.name);
       if (result) {
         setOfficialResult(result);
+        setLastUpdated(new Date().toLocaleTimeString());
         checkSavedGamesForWins(result);
       } else {
         setError("Não foi possível obter o resultado. Verifique sua conexão ou a chave de API.");
@@ -221,12 +223,20 @@ export default function App() {
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 p-4 rounded-2xl flex items-start gap-3 text-red-700">
-              <XCircle className="shrink-0 mt-0.5" size={18} />
-              <div className="text-xs font-medium leading-relaxed">
-                <p className="font-bold mb-1">Erro na Atualização</p>
-                <p>{error}</p>
+            <div className="bg-red-50 border border-red-200 p-4 rounded-2xl flex flex-col gap-3 text-red-700">
+              <div className="flex items-start gap-3">
+                <XCircle className="shrink-0 mt-0.5" size={18} />
+                <div className="text-xs font-medium leading-relaxed">
+                  <p className="font-bold mb-1">Erro na Atualização</p>
+                  <p>{error}</p>
+                </div>
               </div>
+              <button 
+                onClick={handleFetchResult}
+                className="text-[10px] font-bold uppercase tracking-widest bg-red-100 hover:bg-red-200 py-2 rounded-lg transition-colors"
+              >
+                Tentar Novamente
+              </button>
             </div>
           )}
 
@@ -238,7 +248,12 @@ export default function App() {
               </div>
               <div>
                 <p className="text-lg font-bold text-slate-800">#{officialResult.drawNumber}</p>
-                <p className="text-xs text-slate-500">{officialResult.date}</p>
+                <div className="flex items-center justify-between mt-1">
+                  <p className="text-xs text-slate-500">{officialResult.date}</p>
+                  {lastUpdated && (
+                    <p className="text-[9px] text-slate-400 font-medium">Atualizado às {lastUpdated}</p>
+                  )}
+                </div>
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {officialResult.numbers.map(n => (
