@@ -103,19 +103,22 @@ export default function App() {
   };
 
   const handleFetchResult = async () => {
+    if (!process.env.GEMINI_API_KEY) {
+      setError("Configuração pendente: A chave GEMINI_API_KEY não foi encontrada no ambiente.");
+      return;
+    }
     setIsLoading(true);
     setError(null);
     try {
       const result = await fetchLotteryResult(selectedLottery.name);
       if (result) {
         setOfficialResult(result);
-        // Check saved games for wins
         checkSavedGamesForWins(result);
       } else {
-        setError("Não foi possível carregar o resultado. Tente novamente.");
+        setError("Não foi possível obter o resultado. Verifique sua conexão ou a chave de API.");
       }
     } catch (err) {
-      setError("Erro ao buscar dados.");
+      setError("Erro ao processar dados do sorteio.");
     } finally {
       setIsLoading(false);
     }
@@ -216,6 +219,16 @@ export default function App() {
               </button>
             ))}
           </div>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 p-4 rounded-2xl flex items-start gap-3 text-red-700">
+              <XCircle className="shrink-0 mt-0.5" size={18} />
+              <div className="text-xs font-medium leading-relaxed">
+                <p className="font-bold mb-1">Erro na Atualização</p>
+                <p>{error}</p>
+              </div>
+            </div>
+          )}
 
           {officialResult && (
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
