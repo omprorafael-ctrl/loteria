@@ -15,9 +15,11 @@ import {
   LayoutGrid,
   Plus,
   Filter,
-  ArrowUpDown
+  ArrowUpDown,
+  RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { fetchLotteryResult, LotteryResult } from './services/lotteryService';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -25,18 +27,11 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-interface LotteryResult {
-  name: string;
-  drawNumber: string;
-  date: string;
-  numbers: number[];
-}
-
 const LOTTERY_TYPES = [
-  { id: 'mega-sena', name: 'Mega-Sena', maxNumbers: 60, minPick: 6, maxPick: 15, color: 'bg-emerald-600', winRules: [4, 5, 6] },
-  { id: 'lotofacil', name: 'Lotofácil', maxNumbers: 25, minPick: 15, maxPick: 20, color: 'bg-purple-600', winRules: [11, 12, 13, 14, 15] },
-  { id: 'quina', name: 'Quina', maxNumbers: 80, minPick: 5, maxPick: 15, color: 'bg-blue-700', winRules: [2, 3, 4, 5] },
-  { id: 'lotomania', name: 'Lotomania', maxNumbers: 99, minPick: 50, maxPick: 50, color: 'bg-orange-500', winRules: [0, 15, 16, 17, 18, 19, 20] },
+  { id: 'mega-sena', name: 'Mega-Sena', maxNumbers: 60, minPick: 6, maxPick: 15, color: 'bg-emerald-600', winRules: [4, 5, 6], drawnCount: 6 },
+  { id: 'lotofacil', name: 'Lotofácil', maxNumbers: 25, minPick: 15, maxPick: 20, color: 'bg-purple-600', winRules: [11, 12, 13, 14, 15], drawnCount: 15 },
+  { id: 'quina', name: 'Quina', maxNumbers: 80, minPick: 5, maxPick: 15, color: 'bg-blue-700', winRules: [2, 3, 4, 5], drawnCount: 5 },
+  { id: 'lotomania', name: 'Lotomania', maxNumbers: 99, minPick: 50, maxPick: 50, color: 'bg-orange-500', winRules: [0, 15, 16, 17, 18, 19, 20], drawnCount: 20 },
 ];
 
 interface SavedGame {
@@ -62,6 +57,7 @@ export default function App() {
   const [manualNumbers, setManualNumbers] = useState<number[]>([]);
   const [filterLottery, setFilterLottery] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'date' | 'lottery' | 'hits'>('date');
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
   const fetchSavedGames = async () => {
     try {
@@ -115,7 +111,10 @@ export default function App() {
   };
 
   const handleManualResultSubmit = () => {
-    if (manualNumbers.length === 0) return;
+    if (manualNumbers.length !== selectedLottery.drawnCount) {
+      addNotification(`Selecione exatamente ${selectedLottery.drawnCount} números para o resultado.`, 'info');
+      return;
+    }
     const result: LotteryResult = {
       name: selectedLottery.name,
       drawNumber: "Manual",
@@ -126,6 +125,25 @@ export default function App() {
     checkSavedGamesForWins(result);
     setManualMode(false);
     addNotification("Resultado manual aplicado!", 'info');
+  };
+
+  const handleFetchResult = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const result = await fetchLotteryResult(selectedLottery.name);
+      if (result) {
+        setOfficialResult(result);
+        setLastUpdated(new Date().toLocaleTimeString());
+        checkSavedGamesForWins(result);
+      } else {
+        setError("Não foi possível obter o resultado automaticamente.");
+      }
+    } catch (err) {
+      setError("Erro ao buscar resultado via IA.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const checkSavedGamesForWins = (result: LotteryResult) => {
@@ -145,7 +163,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    setOfficialResult(null);
+    handleFetchResult();
     setManualNumbers([]);
     setUserNumbers([]);
   }, [selectedLottery]);
@@ -206,6 +224,13 @@ export default function App() {
               <History size={18} />
               {activeTab === 'play' ? 'Meus Jogos' : 'Voltar'}
             </button>
+            <button 
+              onClick={handleFetchResult}
+              disabled={isLoading}
+              className="p-2 hover:bg-slate-100 rounded-full transition-colors disabled:opacity-50"
+            >
+              <RefreshCw size={20} className={cn(isLoading && "animate-spin")} />
+            </button>
           </div>
         </div>
       </header>
@@ -255,7 +280,12 @@ export default function App() {
               animate={{ opacity: 1, scale: 1 }}
               className="bg-white p-4 rounded-2xl border border-emerald-200 shadow-lg space-y-4"
             >
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Números do Sorteio</p>
+              <div className="flex justify-between items-center">
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Números do Sorteio</p>
+                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                  {manualNumbers.length}/{selectedLottery.drawnCount}
+                </span>
+              </div>
               <div className="grid grid-cols-5 gap-1.5">
                 {Array.from({ length: selectedLottery.maxNumbers }, (_, i) => i + (selectedLottery.id === 'lotomania' ? 0 : 1)).map(num => (
                   <button
@@ -264,7 +294,9 @@ export default function App() {
                       if (manualNumbers.includes(num)) {
                         setManualNumbers(manualNumbers.filter(n => n !== num));
                       } else {
-                        setManualNumbers([...manualNumbers, num]);
+                        if (manualNumbers.length < selectedLottery.drawnCount) {
+                          setManualNumbers([...manualNumbers, num]);
+                        }
                       }
                     }}
                     className={cn(
@@ -280,23 +312,57 @@ export default function App() {
               </div>
               <button 
                 onClick={handleManualResultSubmit}
-                className="w-full py-2 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 transition-colors"
+                disabled={manualNumbers.length !== selectedLottery.drawnCount}
+                className="w-full py-2 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 transition-colors disabled:opacity-50"
               >
                 Confirmar Resultado
               </button>
             </motion.div>
           )}
 
+          {!officialResult && !manualMode && (
+            <div className="bg-slate-50 border border-dashed border-slate-200 p-4 rounded-2xl text-center space-y-2">
+              <Info size={20} className="mx-auto text-slate-300" />
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-tight">
+                Nenhum resultado aplicado para {selectedLottery.name}
+              </p>
+              <p className="text-[9px] text-slate-400">
+                Clique em "Inserir Resultado" para conferir seus jogos.
+              </p>
+            </div>
+          )}
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 p-4 rounded-2xl flex flex-col gap-3 text-red-700">
+              <div className="flex items-start gap-3">
+                <XCircle className="shrink-0 mt-0.5" size={18} />
+                <div className="text-xs font-medium leading-relaxed">
+                  <p className="font-bold mb-1">Erro na Atualização</p>
+                  <p>{error}</p>
+                </div>
+              </div>
+              <button 
+                onClick={handleFetchResult}
+                className="text-[10px] font-bold uppercase tracking-widest bg-red-100 hover:bg-red-200 py-2 rounded-lg transition-colors"
+              >
+                Tentar Novamente
+              </button>
+            </div>
+          )}
+
           {officialResult && (
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
               <div className="flex items-center gap-2 text-slate-500">
                 <History size={16} />
-                <span className="text-xs font-bold uppercase tracking-tighter">Resultado Aplicado</span>
+                <span className="text-xs font-bold uppercase tracking-tighter">Resultado Oficial</span>
               </div>
               <div>
                 <p className="text-lg font-bold text-slate-800">{officialResult.drawNumber === 'Manual' ? 'Conferência Manual' : `#${officialResult.drawNumber}`}</p>
                 <div className="flex items-center justify-between mt-1">
                   <p className="text-xs text-slate-500">{officialResult.date}</p>
+                  {lastUpdated && (
+                    <p className="text-[9px] text-slate-400 font-medium">Atualizado às {lastUpdated}</p>
+                  )}
                 </div>
               </div>
               <div className="flex flex-wrap gap-1.5">
@@ -545,38 +611,60 @@ export default function App() {
                 <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm text-center">
                   <p className="text-sm text-slate-500 font-medium mb-1">Total de Acertos</p>
                   <p className="text-6xl font-black text-emerald-600">{hits.length}</p>
-                  <div className="mt-4 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400">
-                    {hits.length >= (selectedLottery.id === 'mega-sena' ? 4 : selectedLottery.id === 'lotofacil' ? 11 : 5) ? (
-                      <span className="text-emerald-500 flex items-center gap-1">
-                        <CheckCircle2 size={14} /> Você Ganhou!
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1">
-                        <XCircle size={14} /> Não foi dessa vez
-                      </span>
-                    )}
-                  </div>
+                  
+                  {!officialResult ? (
+                    <div className="mt-4 p-2 bg-amber-50 rounded-xl border border-amber-100">
+                      <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">Aguardando Resultado</p>
+                      <p className="text-[9px] text-amber-500 mt-1">Insira o resultado no menu lateral para conferir.</p>
+                    </div>
+                  ) : (
+                    <div className="mt-4 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-400">
+                      {hits.length >= (selectedLottery.id === 'mega-sena' ? 4 : selectedLottery.id === 'lotofacil' ? 11 : 5) ? (
+                        <span className="text-emerald-500 flex items-center gap-1">
+                          <CheckCircle2 size={14} /> Você Ganhou!
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1">
+                          <XCircle size={14} /> Não foi dessa vez
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
 
-                <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-                  <div>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Números Sorteados</p>
-                    <div className="flex flex-wrap gap-2">
-                      {hits.map(n => (
-                        <span key={n} className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-md text-xs font-bold border border-emerald-200">
-                          {n.toString().padStart(2, '0')}
-                        </span>
-                      ))}
-                      {officialResult?.numbers.filter(n => !userNumbers.includes(n)).map(n => (
-                        <span key={n} className="px-2 py-1 bg-slate-100 text-slate-400 rounded-md text-xs font-bold border border-slate-200">
-                          {n.toString().padStart(2, '0')}
-                        </span>
+                {officialResult && (
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                    <div>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Números Sorteados</p>
+                      <div className="flex flex-wrap gap-2">
+                        {hits.map(n => (
+                          <span key={n} className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-md text-xs font-bold border border-emerald-200">
+                            {n.toString().padStart(2, '0')}
+                          </span>
+                        ))}
+                        {officialResult.numbers.filter(n => !userNumbers.includes(n)).map(n => (
+                          <span key={n} className="px-2 py-1 bg-slate-100 text-slate-400 rounded-md text-xs font-bold border border-slate-200">
+                            {n.toString().padStart(2, '0')}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {officialResult?.prizes && (
+                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Premiação Oficial</p>
+                    <div className="space-y-3">
+                      {officialResult.prizes.slice(0, 3).map((prize, idx) => (
+                        <div key={idx} className="flex justify-between items-center text-sm">
+                          <span className="text-slate-600">{prize.description}</span>
+                          <span className="font-bold text-slate-800">{prize.value}</span>
+                        </div>
                       ))}
                     </div>
                   </div>
-                </div>
-
-                {/* Prizes Section Removed since we don't have API data */}
+                )}
               </motion.div>
             ) : (
               <div className="bg-slate-100 border-2 border-dashed border-slate-200 rounded-2xl p-8 text-center">
@@ -616,6 +704,16 @@ export default function App() {
           ))}
         </AnimatePresence>
       </div>
+
+      {/* Loading Overlay */}
+      {isLoading && (
+        <div className="fixed inset-0 bg-white/80 backdrop-blur-sm z-50 flex items-center justify-center">
+          <div className="text-center space-y-4">
+            <RefreshCw size={48} className="animate-spin text-emerald-600 mx-auto" />
+            <p className="font-bold text-slate-800">Buscando resultados oficiais via IA...</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
