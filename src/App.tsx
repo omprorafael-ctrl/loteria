@@ -13,7 +13,9 @@ import {
   Info,
   History,
   LayoutGrid,
-  Plus
+  Plus,
+  Filter,
+  ArrowUpDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
@@ -58,6 +60,8 @@ export default function App() {
   const [teimosinhaDraws, setTeimosinhaDraws] = useState<number>(1);
   const [manualMode, setManualMode] = useState(false);
   const [manualNumbers, setManualNumbers] = useState<number[]>([]);
+  const [filterLottery, setFilterLottery] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'date' | 'lottery' | 'hits'>('date');
 
   const fetchSavedGames = async () => {
     try {
@@ -155,6 +159,27 @@ export default function App() {
       }
     }
   };
+
+  const filteredAndSortedGames = savedGames
+    .filter(game => filterLottery === 'all' || game.lottery_type === filterLottery)
+    .sort((a, b) => {
+      if (sortBy === 'date') {
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      }
+      if (sortBy === 'lottery') {
+        return a.lottery_type.localeCompare(b.lottery_type);
+      }
+      if (sortBy === 'hits') {
+        const getHits = (game: SavedGame) => {
+          if (officialResult && game.lottery_type === selectedLottery.id) {
+            return game.numbers.filter(n => officialResult.numbers.includes(n)).length;
+          }
+          return 0;
+        };
+        return getHits(b) - getHits(a);
+      }
+      return 0;
+    });
 
   const hits = userNumbers.filter(num => officialResult?.numbers.includes(num));
   const misses = userNumbers.filter(num => !officialResult?.numbers.includes(num));
@@ -393,15 +418,55 @@ export default function App() {
                 exit={{ opacity: 0, x: -20 }}
                 className="space-y-4"
               >
-                <h3 className="text-lg font-bold text-slate-800 px-2">Meus Jogos Salvos</h3>
-                {savedGames.length === 0 ? (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-2">
+                  <h3 className="text-lg font-bold text-slate-800">Meus Jogos Salvos</h3>
+                  
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1 sm:flex-none">
+                      <Filter size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <select 
+                        value={filterLottery}
+                        onChange={(e) => setFilterLottery(e.target.value)}
+                        className="pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 appearance-none focus:outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all w-full"
+                      >
+                        <option value="all">Todas Loterias</option>
+                        {LOTTERY_TYPES.map(l => (
+                          <option key={l.id} value={l.id}>{l.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="relative flex-1 sm:flex-none">
+                      <ArrowUpDown size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <select 
+                        value={sortBy}
+                        onChange={(e) => setSortBy(e.target.value as any)}
+                        className="pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-600 appearance-none focus:outline-none focus:ring-2 focus:ring-emerald-500/20 transition-all w-full"
+                      >
+                        <option value="date">Data</option>
+                        <option value="lottery">Loteria</option>
+                        <option value="hits">Acertos</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {filteredAndSortedGames.length === 0 ? (
                   <div className="bg-white p-12 rounded-3xl border border-slate-200 text-center space-y-4">
                     <History size={48} className="mx-auto text-slate-200" />
-                    <p className="text-slate-500">Você ainda não salvou nenhum jogo.</p>
-                    <button onClick={() => setActiveTab('play')} className="text-emerald-600 font-bold hover:underline">Começar a jogar</button>
+                    <p className="text-slate-500">
+                      {savedGames.length === 0 
+                        ? "Você ainda não salvou nenhum jogo." 
+                        : "Nenhum jogo encontrado com os filtros atuais."}
+                    </p>
+                    {savedGames.length === 0 ? (
+                      <button onClick={() => setActiveTab('play')} className="text-emerald-600 font-bold hover:underline">Começar a jogar</button>
+                    ) : (
+                      <button onClick={() => {setFilterLottery('all'); setSortBy('date');}} className="text-emerald-600 font-bold hover:underline">Limpar Filtros</button>
+                    )}
                   </div>
                 ) : (
-                  savedGames.map((game) => {
+                  filteredAndSortedGames.map((game) => {
                     const lottery = LOTTERY_TYPES.find(l => l.id === game.lottery_type);
                     const isCurrentLottery = game.lottery_type === selectedLottery.id;
                     const hits = isCurrentLottery && officialResult ? game.numbers.filter(n => officialResult.numbers.includes(n)) : [];
