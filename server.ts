@@ -28,65 +28,68 @@ try {
   // Column might already exist
 }
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
+const app = express();
 
-  app.use(express.json());
+app.use(express.json());
 
-  // API Routes
-  app.get("/api/games", (req, res) => {
-    try {
-      const games = db.prepare("SELECT * FROM user_games ORDER BY created_at DESC").all();
-      res.json(games.map((g: any) => ({
-        ...g,
-        numbers: JSON.parse(g.numbers)
-      })));
-    } catch (err) {
-      res.status(500).json({ error: "Failed to fetch games" });
-    }
-  });
+// API Routes
+app.get("/api/games", (req, res) => {
+  try {
+    const games = db.prepare("SELECT * FROM user_games ORDER BY created_at DESC").all();
+    res.json(games.map((g: any) => ({
+      ...g,
+      numbers: JSON.parse(g.numbers)
+    })));
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch games" });
+  }
+});
 
-  app.post("/api/games", (req, res) => {
-    const { lottery_type, numbers, draw_number, teimosinha_draws } = req.body;
-    if (!lottery_type || !numbers) {
-      return res.status(400).json({ error: "Missing data" });
-    }
-    try {
-      const stmt = db.prepare("INSERT INTO user_games (lottery_type, numbers, draw_number, teimosinha_draws) VALUES (?, ?, ?, ?)");
-      const result = stmt.run(lottery_type, JSON.stringify(numbers), draw_number, teimosinha_draws || 1);
-      res.json({ id: result.lastInsertRowid });
-    } catch (err) {
-      res.status(500).json({ error: "Failed to save game" });
-    }
-  });
+app.post("/api/games", (req, res) => {
+  const { lottery_type, numbers, draw_number, teimosinha_draws } = req.body;
+  if (!lottery_type || !numbers) {
+    return res.status(400).json({ error: "Missing data" });
+  }
+  try {
+    const stmt = db.prepare("INSERT INTO user_games (lottery_type, numbers, draw_number, teimosinha_draws) VALUES (?, ?, ?, ?)");
+    const result = stmt.run(lottery_type, JSON.stringify(numbers), draw_number, teimosinha_draws || 1);
+    res.json({ id: result.lastInsertRowid });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to save game" });
+  }
+});
 
-  app.delete("/api/games/:id", (req, res) => {
-    try {
-      db.prepare("DELETE FROM user_games WHERE id = ?").run(req.params.id);
-      res.json({ success: true });
-    } catch (err) {
-      res.status(500).json({ error: "Failed to delete game" });
-    }
-  });
+app.delete("/api/games/:id", (req, res) => {
+  try {
+    db.prepare("DELETE FROM user_games WHERE id = ?").run(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to delete game" });
+  }
+});
 
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
+// Vite middleware for development (only if not on Vercel)
+if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
+  const startVite = async () => {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
-  } else {
-    app.use(express.static(path.join(__dirname, "dist")));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(__dirname, "dist", "index.html"));
-    });
-  }
+  };
+  startVite();
+} else {
+  // In production/Vercel, static files are handled by Vercel configuration
+  // but we keep this for local production testing
+  app.use(express.static(path.join(__dirname, "dist")));
+}
 
+// Only listen if this file is run directly (not as a module on Vercel)
+if (!process.env.VERCEL) {
+  const PORT = 3000;
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
   });
 }
 
-startServer();
+export default app;
