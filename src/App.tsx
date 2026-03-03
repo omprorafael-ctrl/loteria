@@ -7,21 +7,27 @@ import React, { useState, useEffect } from 'react';
 import { 
   Trophy, 
   Search, 
-  RefreshCw, 
   CheckCircle2, 
   XCircle, 
   ChevronRight,
   Info,
   History,
-  LayoutGrid
+  LayoutGrid,
+  Plus
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { fetchLotteryResult, LotteryResult } from './services/lotteryService';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+interface LotteryResult {
+  name: string;
+  drawNumber: string;
+  date: string;
+  numbers: number[];
 }
 
 const LOTTERY_TYPES = [
@@ -50,7 +56,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'play' | 'saved'>('play');
   const [notifications, setNotifications] = useState<{id: string, message: string, type: 'win' | 'info'}[]>([]);
   const [teimosinhaDraws, setTeimosinhaDraws] = useState<number>(1);
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [manualMode, setManualMode] = useState(false);
+  const [manualNumbers, setManualNumbers] = useState<number[]>([]);
 
   const fetchSavedGames = async () => {
     try {
@@ -103,27 +110,18 @@ export default function App() {
     }, 5000);
   };
 
-  const handleFetchResult = async () => {
-    if (!process.env.GEMINI_API_KEY) {
-      setError("Configuração pendente: A chave GEMINI_API_KEY não foi encontrada no ambiente.");
-      return;
-    }
-    setIsLoading(true);
-    setError(null);
-    try {
-      const result = await fetchLotteryResult(selectedLottery.name);
-      if (result) {
-        setOfficialResult(result);
-        setLastUpdated(new Date().toLocaleTimeString());
-        checkSavedGamesForWins(result);
-      } else {
-        setError("Não foi possível obter o resultado. Verifique sua conexão ou a chave de API.");
-      }
-    } catch (err) {
-      setError("Erro ao processar dados do sorteio.");
-    } finally {
-      setIsLoading(false);
-    }
+  const handleManualResultSubmit = () => {
+    if (manualNumbers.length === 0) return;
+    const result: LotteryResult = {
+      name: selectedLottery.name,
+      drawNumber: "Manual",
+      date: new Date().toLocaleDateString(),
+      numbers: manualNumbers.sort((a, b) => a - b)
+    };
+    setOfficialResult(result);
+    checkSavedGamesForWins(result);
+    setManualMode(false);
+    addNotification("Resultado manual aplicado!", 'info');
   };
 
   const checkSavedGamesForWins = (result: LotteryResult) => {
@@ -143,7 +141,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    handleFetchResult();
+    setOfficialResult(null);
+    setManualNumbers([]);
     setUserNumbers([]);
   }, [selectedLottery]);
 
@@ -182,13 +181,6 @@ export default function App() {
               <History size={18} />
               {activeTab === 'play' ? 'Meus Jogos' : 'Voltar'}
             </button>
-            <button 
-              onClick={handleFetchResult}
-              disabled={isLoading}
-              className="p-2 hover:bg-slate-100 rounded-full transition-colors disabled:opacity-50"
-            >
-              <RefreshCw size={20} className={cn(isLoading && "animate-spin")} />
-            </button>
           </div>
         </div>
       </header>
@@ -222,37 +214,64 @@ export default function App() {
             ))}
           </div>
 
-          {error && (
-            <div className="bg-red-50 border border-red-200 p-4 rounded-2xl flex flex-col gap-3 text-red-700">
-              <div className="flex items-start gap-3">
-                <XCircle className="shrink-0 mt-0.5" size={18} />
-                <div className="text-xs font-medium leading-relaxed">
-                  <p className="font-bold mb-1">Erro na Atualização</p>
-                  <p>{error}</p>
-                </div>
+          <div className="pt-4">
+            <button 
+              onClick={() => setManualMode(!manualMode)}
+              className="w-full flex items-center justify-center gap-2 p-3 rounded-xl border border-dashed border-slate-300 text-slate-500 hover:border-emerald-500 hover:text-emerald-600 transition-all text-sm font-bold"
+            >
+              <Plus size={18} />
+              {manualMode ? 'Cancelar Entrada' : 'Inserir Resultado'}
+            </button>
+          </div>
+
+          {manualMode && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="bg-white p-4 rounded-2xl border border-emerald-200 shadow-lg space-y-4"
+            >
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Números do Sorteio</p>
+              <div className="grid grid-cols-5 gap-1.5">
+                {Array.from({ length: selectedLottery.maxNumbers }, (_, i) => i + (selectedLottery.id === 'lotomania' ? 0 : 1)).map(num => (
+                  <button
+                    key={num}
+                    onClick={() => {
+                      if (manualNumbers.includes(num)) {
+                        setManualNumbers(manualNumbers.filter(n => n !== num));
+                      } else {
+                        setManualNumbers([...manualNumbers, num]);
+                      }
+                    }}
+                    className={cn(
+                      "w-full aspect-square flex items-center justify-center rounded-md text-[10px] font-bold border transition-all",
+                      manualNumbers.includes(num)
+                        ? "bg-emerald-600 border-emerald-700 text-white"
+                        : "bg-slate-50 border-slate-200 text-slate-400"
+                    )}
+                  >
+                    {num.toString().padStart(2, '0')}
+                  </button>
+                ))}
               </div>
               <button 
-                onClick={handleFetchResult}
-                className="text-[10px] font-bold uppercase tracking-widest bg-red-100 hover:bg-red-200 py-2 rounded-lg transition-colors"
+                onClick={handleManualResultSubmit}
+                className="w-full py-2 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 transition-colors"
               >
-                Tentar Novamente
+                Confirmar Resultado
               </button>
-            </div>
+            </motion.div>
           )}
 
           {officialResult && (
             <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm space-y-3">
               <div className="flex items-center gap-2 text-slate-500">
                 <History size={16} />
-                <span className="text-xs font-bold uppercase tracking-tighter">Último Concurso</span>
+                <span className="text-xs font-bold uppercase tracking-tighter">Resultado Aplicado</span>
               </div>
               <div>
-                <p className="text-lg font-bold text-slate-800">#{officialResult.drawNumber}</p>
+                <p className="text-lg font-bold text-slate-800">{officialResult.drawNumber === 'Manual' ? 'Conferência Manual' : `#${officialResult.drawNumber}`}</p>
                 <div className="flex items-center justify-between mt-1">
                   <p className="text-xs text-slate-500">{officialResult.date}</p>
-                  {lastUpdated && (
-                    <p className="text-[9px] text-slate-400 font-medium">Atualizado às {lastUpdated}</p>
-                  )}
                 </div>
               </div>
               <div className="flex flex-wrap gap-1.5">
@@ -262,6 +281,12 @@ export default function App() {
                   </span>
                 ))}
               </div>
+              <button 
+                onClick={() => setOfficialResult(null)}
+                className="w-full py-1.5 text-[10px] font-bold text-slate-400 uppercase hover:text-red-500 transition-colors"
+              >
+                Limpar Resultado
+              </button>
             </div>
           )}
         </div>
@@ -486,19 +511,7 @@ export default function App() {
                   </div>
                 </div>
 
-                {officialResult?.prizes && (
-                  <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Premiação Estimada</p>
-                    <div className="space-y-3">
-                      {officialResult.prizes.slice(0, 3).map((prize, idx) => (
-                        <div key={idx} className="flex justify-between items-center text-sm">
-                          <span className="text-slate-600">{prize.description}</span>
-                          <span className="font-bold text-slate-800">{prize.value}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                {/* Prizes Section Removed since we don't have API data */}
               </motion.div>
             ) : (
               <div className="bg-slate-100 border-2 border-dashed border-slate-200 rounded-2xl p-8 text-center">
@@ -538,16 +551,6 @@ export default function App() {
           ))}
         </AnimatePresence>
       </div>
-
-      {/* Loading Overlay */}
-      {isLoading && (
-        <div className="fixed inset-0 bg-white/80 backdrop-blur-sm z-50 flex items-center justify-center">
-          <div className="text-center space-y-4">
-            <RefreshCw size={48} className="animate-spin text-emerald-600 mx-auto" />
-            <p className="font-bold text-slate-800">Buscando resultados oficiais...</p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
